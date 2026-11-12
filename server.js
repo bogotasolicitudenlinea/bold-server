@@ -2,12 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const https = require('https');
 
-// 🔥 FORZAR DNS DE GOOGLE (SOLUCIONA EL ERROR ENOTFOUND EN RAILWAY) 🔥
+// 🔥 FORZAR DNS DE GOOGLE 🔥
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
-
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
 app.use(cors());
@@ -29,38 +28,59 @@ app.post('/crear-pago-bold', async (req, res) => {
         const amountStr = monto.toString();
         const currency = 'COP';
         
-        // Bold exige este orden exacto para el hash: OrderId + Amount + Currency + SecretKey
         const stringToHash = `${orderId}${amountStr}${currency}${BOLD_SECRET_KEY}`;
         const hash = crypto.createHash('sha256').update(stringToHash).digest('hex');
 
-        // 2. Petición a Bold para crear el link de pago
-        const boldResponse = await fetch('https://api.bold.co/online/link/v1', {
+        const payload = JSON.stringify({
+            amount_type: "CLOSE",
+            amount: {
+                currency: "COP",
+                total_amount: parseInt(monto) 
+            },
+            description: `Pago Finesa - ${nombre}`,
+            reference: orderId,
+            payment_methods: ["CREDIT_CARD", "PSE", "NEQUI", "BOTON_BANCOLOMBIA"],
+            integrity_signature: hash
+        });
+
+        const options = {
+            hostname: 'api.bold.co',
+            port: 443,
+            path: '/online/link/v1',
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `x-api-key ${BOLD_IDENTITY_KEY}`
-            },
-            body: JSON.stringify({
-                amount_type: "CLOSE",
-                amount: {
-                    currency: "COP",
-                    total_amount: parseInt(monto) 
-                },
-                description: `Pago Finesa - ${nombre}`,
-                reference: orderId,
-                payment_methods: ["CREDIT_CARD", "PSE", "NEQUI", "BOTON_BANCOLOMBIA"],
-                integrity_signature: hash
-            })
+                'Authorization': `x-api-key ${BOLD_IDENTITY_KEY}`,
+                'Content-Length': Buffer.byteLength(payload)
+            }
+        };
+
+        const request = https.request(options, (response) => {
+            let data = '';
+            response.on('data', (chunk) => { data += chunk; });
+            response.on('end', () => {
+                try {
+                    const json = JSON.parse(data);
+                    if (json.payload && json.payload.url) {
+                        res.json({ ok: true, url: json.payload.url });
+                    } else {
+                        console.error("Error de Bold:", json);
+                        res.status(500).json({ ok: false, error: "No se pudo generar el link de pago.", detalle: json });
+                    }
+                } catch (e) {
+                    console.error("Error parseando respuesta:", data);
+                    res.status(500).json({ ok: false, error: "Respuesta inválida de Bold." });
+                }
+            });
         });
 
-        const data = await boldResponse.json();
+        request.on('error', (error) => {
+            console.error("Error en petición HTTPS:", error);
+            res.status(500).json({ ok: false, error: error.message });
+        });
 
-        if (data.payload && data.payload.url) {
-            res.json({ ok: true, url: data.payload.url });
-        } else {
-            console.error("Error de Bold:", data);
-            res.status(500).json({ ok: false, error: "No se pudo generar el link de pago.", detalle: data });
-        }
+        request.write(payload);
+        request.end();
 
     } catch (error) {
         console.error("Error del servidor:", error);
