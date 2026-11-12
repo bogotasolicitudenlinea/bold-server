@@ -4,9 +4,11 @@ const cors = require('cors');
 const crypto = require('crypto');
 const https = require('https');
 
-// 🔥 FORZAR DNS DE GOOGLE 🔥
+// 🔥 FORZAR DNS DE GOOGLE Y PREFERIR IPV4 🔥
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
+// Forzar a Node a que prefiera IPv4 sobre IPv6
+dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
 app.use(cors());
@@ -20,23 +22,18 @@ app.post('/crear-pago-bold', async (req, res) => {
         const { monto, documento, nombre } = req.body;
 
         if (!monto || !documento) {
-            return res.status(400).json({ ok: false, error: "Faltan datos (monto o documento)." });
+            return res.status(400).json({ ok: false, error: "Faltan datos." });
         }
 
-        // 1. Crear la firma de integridad (Hash de Seguridad)
         const orderId = 'FINESA-' + Date.now() + '-' + documento;
         const amountStr = monto.toString();
         const currency = 'COP';
-        
         const stringToHash = `${orderId}${amountStr}${currency}${BOLD_SECRET_KEY}`;
         const hash = crypto.createHash('sha256').update(stringToHash).digest('hex');
 
         const payload = JSON.stringify({
             amount_type: "CLOSE",
-            amount: {
-                currency: "COP",
-                total_amount: parseInt(monto) 
-            },
+            amount: { currency: "COP", total_amount: parseInt(monto) },
             description: `Pago Finesa - ${nombre}`,
             reference: orderId,
             payment_methods: ["CREDIT_CARD", "PSE", "NEQUI", "BOTON_BANCOLOMBIA"],
@@ -52,7 +49,9 @@ app.post('/crear-pago-bold', async (req, res) => {
                 'Content-Type': 'application/json',
                 'Authorization': `x-api-key ${BOLD_IDENTITY_KEY}`,
                 'Content-Length': Buffer.byteLength(payload)
-            }
+            },
+            // 🔥 FORZAR IPV4 EN LA CONEXIÓN 🔥
+            family: 4 
         };
 
         const request = https.request(options, (response) => {
@@ -64,18 +63,16 @@ app.post('/crear-pago-bold', async (req, res) => {
                     if (json.payload && json.payload.url) {
                         res.json({ ok: true, url: json.payload.url });
                     } else {
-                        console.error("Error de Bold:", json);
-                        res.status(500).json({ ok: false, error: "No se pudo generar el link de pago.", detalle: json });
+                        res.status(500).json({ ok: false, error: "Error de Bold.", detalle: json });
                     }
                 } catch (e) {
-                    console.error("Error parseando respuesta:", data);
-                    res.status(500).json({ ok: false, error: "Respuesta inválida de Bold." });
+                    res.status(500).json({ ok: false, error: "Respuesta inválida." });
                 }
             });
         });
 
         request.on('error', (error) => {
-            console.error("Error en petición HTTPS:", error);
+            console.error("Error HTTPS:", error);
             res.status(500).json({ ok: false, error: error.message });
         });
 
@@ -83,14 +80,13 @@ app.post('/crear-pago-bold', async (req, res) => {
         request.end();
 
     } catch (error) {
-        console.error("Error del servidor:", error);
         res.status(500).json({ ok: false, error: error.message });
     }
 });
 
 app.get('/', (req, res) => {
-    res.send('Servidor de Bold funcionando correctamente.');
+    res.send('Servidor de Bold funcionando.');
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor Bold corriendo en puerto ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Servidor en puerto ${PORT}`));
