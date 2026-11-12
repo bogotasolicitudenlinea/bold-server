@@ -4,7 +4,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const https = require('https');
 
-// 🔥 FORZAR DNS DE GOOGLE Y PREFERIR IPV4 A NIVEL DE SISTEMA 🔥
+// 🔥 FORZAR IPV4 Y DNS DE GOOGLE 🔥
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
 dns.setDefaultResultOrder('ipv4first');
@@ -16,11 +16,7 @@ app.use(express.json());
 const BOLD_IDENTITY_KEY = process.env.BOLD_IDENTITY_KEY; 
 const BOLD_SECRET_KEY = process.env.BOLD_SECRET_KEY;
 
-// 🔥 AGENTE HTTPS QUE FUERZA IPV4 EN LA CONEXIÓN 🔥
-const ipv4Agent = new https.Agent({
-    family: 4,
-    keepAlive: true
-});
+const ipv4Agent = new https.Agent({ family: 4, keepAlive: true });
 
 app.post('/crear-pago-bold', async (req, res) => {
     try {
@@ -45,12 +41,13 @@ app.post('/crear-pago-bold', async (req, res) => {
             integrity_signature: hash
         });
 
+        // 🔥 URL CORREGIDA SEGÚN LA DOCUMENTACIÓN OFICIAL 🔥
         const options = {
-            hostname: 'api.bold.co',
+            hostname: 'integrations.api.bold.co', 
             port: 443,
             path: '/online/link/v1',
             method: 'POST',
-            agent: ipv4Agent, // 🔥 USAMOS EL AGENTE CON IPV4 FORZADO 🔥
+            agent: ipv4Agent,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `x-api-key ${BOLD_IDENTITY_KEY}`,
@@ -67,10 +64,17 @@ app.post('/crear-pago-bold', async (req, res) => {
                     if (json.payload && json.payload.url) {
                         res.json({ ok: true, url: json.payload.url });
                     } else {
-                        res.status(500).json({ ok: false, error: "Error de Bold.", detalle: json });
+                        // 🔥 ESTO TE DIRÁ EXACTAMENTE QUÉ DIJO BOLD 🔥
+                        console.error("Respuesta de Bold:", json);
+                        res.status(500).json({ 
+                            ok: false, 
+                            error: "Bold rechazó la petición.", 
+                            detalle: json 
+                        });
                     }
                 } catch (e) {
-                    res.status(500).json({ ok: false, error: "Respuesta inválida." });
+                    console.error("Respuesta no JSON de Bold:", data);
+                    res.status(500).json({ ok: false, error: "Bold devolvió una respuesta inesperada." });
                 }
             });
         });
@@ -84,6 +88,7 @@ app.post('/crear-pago-bold', async (req, res) => {
         request.end();
 
     } catch (error) {
+        console.error("Error interno:", error);
         res.status(500).json({ ok: false, error: error.message });
     }
 });
