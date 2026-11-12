@@ -4,10 +4,9 @@ const cors = require('cors');
 const crypto = require('crypto');
 const https = require('https');
 
-// 🔥 FORZAR DNS DE GOOGLE Y PREFERIR IPV4 🔥
+// 🔥 FORZAR DNS DE GOOGLE Y PREFERIR IPV4 A NIVEL DE SISTEMA 🔥
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4']);
-// Forzar a Node a que prefiera IPv4 sobre IPv6
 dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
@@ -16,6 +15,12 @@ app.use(express.json());
 
 const BOLD_IDENTITY_KEY = process.env.BOLD_IDENTITY_KEY; 
 const BOLD_SECRET_KEY = process.env.BOLD_SECRET_KEY;
+
+// 🔥 AGENTE HTTPS QUE FUERZA IPV4 EN LA CONEXIÓN 🔥
+const ipv4Agent = new https.Agent({
+    family: 4,
+    keepAlive: true
+});
 
 app.post('/crear-pago-bold', async (req, res) => {
     try {
@@ -45,13 +50,12 @@ app.post('/crear-pago-bold', async (req, res) => {
             port: 443,
             path: '/online/link/v1',
             method: 'POST',
+            agent: ipv4Agent, // 🔥 USAMOS EL AGENTE CON IPV4 FORZADO 🔥
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `x-api-key ${BOLD_IDENTITY_KEY}`,
                 'Content-Length': Buffer.byteLength(payload)
-            },
-            // 🔥 FORZAR IPV4 EN LA CONEXIÓN 🔥
-            family: 4 
+            }
         };
 
         const request = https.request(options, (response) => {
