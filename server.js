@@ -2,6 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+
+// 🔥 FORZAR DNS DE GOOGLE (SOLUCIONA EL ERROR ENOTFOUND EN RAILWAY) 🔥
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']);
+
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
